@@ -1,7 +1,23 @@
 import os
 import sys
+import json
+import argparse
+from typing import Any, Dict, List
 import requests
 from dotenv import load_dotenv
+
+def normalize_token_vaults(tv: Any) -> List[Dict[str, Any]]:
+    if isinstance(tv, list):
+        return tv
+    if isinstance(tv, dict):
+        flat: List[Dict[str, Any]] = []
+        for v in tv.values():
+            if isinstance(v, list):
+                flat.extend(v)
+            elif isinstance(v, dict):
+                flat.append(v)
+        return flat
+    return []
 
 def main():
     load_dotenv()
@@ -13,6 +29,15 @@ def main():
     base_url = os.getenv("EXPAND_BASE_URL", "https://api.expand.network")
     endpoint = f"{base_url}/yieldaggregator/getvaults"
 
+    p = argparse.ArgumentParser(description="cli-get vaults + netAPR (ordenado)")
+    p.add_argument("--aggregator", default="yearn", help="yearn infra")
+    p.add_argument("--chain", default="ethereum", help="ethereum - por ahora")
+    p.add_argument("--token", help="tokenAddress para yearn/harvest")
+    p.add_argument("--raw", action="store_true", help="imprimir JSON raw")
+    args = p.parse_args()
+
+    if (args.aggregator.strip().lower(), args.chain.strip().lower()) != ("yearn", "ethereum"):
+        sys.exit("Script soporta --aggregator yearn --chain ethereum")
     #Yearn en ETH (ID 5000) + WETH
     params = {
         "yieldAggregatorId": "5000",  # Yearn / Ethereum
@@ -28,20 +53,13 @@ def main():
     except Exception as e:
         sys.exit(f"Error HTTP/JSON: {e}")
 
+    if args.raw:
+        print(json.dumps(data, indent=2))
+        return
     if data.get("status") != 200:
-        sys.exit(f"Respuesta no OK: {data}")
-
-    token_vaults = data.get("data", {}).get("tokenVaults", [])
-
-    # Normaliza por si viene como dict agrupado por token
-    if isinstance(token_vaults, dict):
-        flat = []
-        for v in token_vaults.values():
-            if isinstance(v, list):
-                flat.extend(v)
-            elif isinstance(v, dict):
-                flat.append(v)
-        token_vaults = flat
+        sys.exit(f"Respuesta NO ok: {data}")
+    
+    token_vaults = normalize_token_vaults(data.get("data", {}.get("tokenVaults", [])))
 
     print("Vaults recibidos:", len(token_vaults))
     for v in token_vaults[:5]:
