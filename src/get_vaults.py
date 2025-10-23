@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 import os
 import sys
 import json
@@ -15,9 +17,23 @@ def normalize_token_vaults(tv: Any) -> List[Dict[str, Any]]:
             if isinstance(v, list):
                 flat.extend(v)
             elif isinstance(v, dict):
+                inner = v.get("tokenVaults")
+                if isinstance(inner, list):
+                    flat.extend(inner)
+            else:
                 flat.append(v)
         return flat
     return []
+def to_float(x: Any) -> float:
+    try:
+        return float(x)
+    except Exception:
+        import math
+        return float("NaN")
+
+def extract_netapr(v: Dict[str, Any]) -> float:
+    apr = v.get("apr") or {}
+    return to_float(apr.get("netAPR"))
 
 def main():
     load_dotenv()
@@ -29,7 +45,7 @@ def main():
     base_url = os.getenv("EXPAND_BASE_URL", "https://api.expand.network")
     endpoint = f"{base_url}/yieldaggregator/getvaults"
 
-    p = argparse.ArgumentParser(description="cli-get vaults + netAPR (ordenado)")
+    p = argparse.ArgumentParser(description="cli-get vaults + netAPR (ordenado)Yearn/ETH/WETH, --raw para ver JSON")
     p.add_argument("--aggregator", default="yearn", help="yearn infra")
     p.add_argument("--chain", default="ethereum", help="ethereum - por ahora")
     p.add_argument("--token", help="tokenAddress para yearn/harvest")
@@ -61,11 +77,16 @@ def main():
     
     token_vaults = normalize_token_vaults(data.get("data", {}.get("tokenVaults", [])))
 
+    import math
+    token_vaults.sort(
+        key=lambda v: (extract_netapr(v) if extract_netapr(v) == extract_netapr(v) else -math.inf),
+        reverse=True
+    )
     print("Vaults recibidos:", len(token_vaults))
     for v in token_vaults[:5]:
         apr = (v.get("apr") or {})
         net = apr.get("netAPR")
-        print("-", v.get("vaultName"), "|", v.get("vaultSymbol"), "| netAPR:", net)
+        print("-", v.get("vaultName"), "|", v.get("vaultSymbol"), "| netAPR:", net, "|", v.get("vaultAddress"))
 
 if __name__ == "__main__":
     main()
